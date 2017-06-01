@@ -73,7 +73,7 @@ function Trainer:train(epoch, dataloader)
       print((' | Epoch: [%d][%d/%d]    Time %.3f  Data %.3f  Err %1.4f  top1 %7.3f  top5 %7.3f'):format(
          epoch, n, trainSize, timer:time().real, dataTime, loss, top1, top5))
 
-      -- check that the storage didn't get changed do to an unfortunate getParameters call
+      -- check that the storage didn't get changed due to an unfortunate getParameters call
       assert(self.params:storage() == self.model:parameters()[1]:storage())
 
       timer:reset()
@@ -135,11 +135,11 @@ function Trainer:computeScore(output, target, nCrops)
    -- Coputes the top1 and top5 error rate
    local batchSize = output:size(1)
 
-   local _ , predictions = output:float():sort(2, true) -- descending
+   local _ , predictions = output:float():topk(5, 2, true, true) -- descending
 
    -- Find which predictions match the target
    local correct = predictions:eq(
-      target:long():view(batchSize, 1):expandAs(output))
+      target:long():view(batchSize, 1):expandAs(predictions))
 
    -- Top-1 score
    local top1 = 1.0 - (correct:narrow(2, 1, 1):sum() / batchSize)
@@ -151,13 +151,23 @@ function Trainer:computeScore(output, target, nCrops)
    return top1 * 100, top5 * 100
 end
 
+local function getCudaTensorType(tensorType)
+  if tensorType == 'torch.CudaHalfTensor' then
+     return cutorch.createCudaHostHalfTensor()
+  elseif tensorType == 'torch.CudaDoubleTensor' then
+    return cutorch.createCudaHostDoubleTensor()
+  else
+     return cutorch.createCudaHostTensor()
+  end
+end
+
 function Trainer:copyInputs(sample)
    -- Copies the input to a CUDA tensor, if using 1 GPU, or to pinned memory,
    -- if using DataParallelTable. The target is always copied to a CUDA tensor
    self.input = self.input or (self.opt.nGPU == 1
-      and torch.CudaTensor()
-      or cutorch.createCudaHostTensor())
-   self.target = self.target or (torch.CudaLongTensor and torch.CudaLongTensor()or torch.CudaTensor())
+      and torch[self.opt.tensorType:match('torch.(%a+)')]()
+      or getCudaTensorType(self.opt.tensorType))
+   self.target = self.target or (torch.CudaLongTensor and torch.CudaLongTensor())
    self.input:resize(sample.input:size()):copy(sample.input)
    self.target:resize(sample.target:size()):copy(sample.target)
 end
