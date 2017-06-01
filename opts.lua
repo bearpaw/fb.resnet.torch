@@ -29,7 +29,7 @@ function M.parse(arg)
    ------------- Training options --------------------
    cmd:option('-nEpochs',         0,       'Number of total epochs to run')
    cmd:option('-epochNumber',     1,       'Manual epoch number (useful on restarts)')
-   cmd:option('-batchSize',       32,      'mini-batch size (1 = pure stochastic)')
+   cmd:option('-batchSize',       128,     'mini-batch size (1 = pure stochastic)')
    cmd:option('-testOnly',        'false', 'Run on validation set only')
    cmd:option('-tenCrop',         'false', 'Ten-crop testing')
    ------------- Checkpointing options ---------------
@@ -40,7 +40,7 @@ function M.parse(arg)
    ---------- Optimization options ----------------------
    cmd:option('-LR',              0.1,   'initial learning rate')
    cmd:option('-momentum',        0.9,   'momentum')
-   cmd:option('-weightDecay',     1e-4,  'weight decay')
+   cmd:option('-weightDecay',     5e-4,  'weight decay')
    ---------- Model options ----------------------------------
    cmd:option('-netType',      'resnet', 'Options: resnet | preresnet')
    cmd:option('-depth',        34,       'ResNet depth: 18 | 34 | 50 | 101 | ...', 'number')
@@ -82,11 +82,11 @@ function M.parse(arg)
    elseif opt.dataset == 'cifar10' then
       -- Default shortcutType=A and nEpochs=164
       opt.shortcutType = opt.shortcutType == '' and 'A' or opt.shortcutType
-      opt.nEpochs = opt.nEpochs == 0 and 164 or opt.nEpochs
+      opt.nEpochs = opt.nEpochs == 0 and 200 or opt.nEpochs
    elseif opt.dataset == 'cifar100' then
        -- Default shortcutType=A and nEpochs=164
        opt.shortcutType = opt.shortcutType == '' and 'A' or opt.shortcutType
-       opt.nEpochs = opt.nEpochs == 0 and 164 or opt.nEpochs
+       opt.nEpochs = opt.nEpochs == 0 and 200 or opt.nEpochs
    else
       cmd:error('unknown dataset: ' .. opt.dataset)
    end
