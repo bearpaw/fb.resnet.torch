@@ -32,6 +32,8 @@ function M.parse(arg)
    cmd:option('-testOnly',        'false', 'Run on validation set only')
    cmd:option('-tenCrop',         'false', 'Ten-crop testing')
    ------------- Checkpointing options ---------------
+   cmd:option('-expID',           'default',     'Experiment ID')
+   cmd:option('-snapshot',        10,            'Save models every snapshot step')
    cmd:option('-save',            'checkpoints', 'Directory in which to save checkpoints')
    cmd:option('-resume',          'none',        'Resume from the latest checkpoint in this directory')
    ---------- Optimization options ----------------------
@@ -44,6 +46,8 @@ function M.parse(arg)
    cmd:option('-shortcutType', '',       'Options: A | B | C')
    cmd:option('-retrain',      'none',   'Path to model to retrain with')
    cmd:option('-optimState',   'none',   'Path to an optimState to reload from')
+   cmd:option('-dropout',      0,      'Dropout ratio')
+   cmd:option('-widen_factor', 10,       'Widen factor')
    ---------- Model options ----------------------------------
    cmd:option('-shareGradInput',  'false', 'Share gradInput tensors to reduce memory usage')
    cmd:option('-optnet',          'false', 'Use optnet to reduce memory usage')

@@ -37,8 +37,8 @@ local trainer = Trainer(model, criterion, opt, optimState)
 
 -- Save training log
 local Logger = require 'Logger'
-local logger = Logger(paths.concat(opt.save, 'train.log'), opt.resume ~= 'none')
-logger:setNames{'trainTop1', 'trainTop5', 'trainLoss', 'testTop1', 'testTop5'}
+local logger = Logger(paths.concat(opt.save, opt.expID, 'train.log'), opt.resume ~= 'none')
+logger:setNames{'epoch', 'lr', 'trainTop1', 'trainTop5', 'trainLoss', 'testTop1', 'testTop5'}
 
 if opt.testOnly then
    local top1Err, top5Err = trainer:test(0, valLoader)
@@ -51,7 +51,7 @@ local bestTop1 = math.huge
 local bestTop5 = math.huge
 for epoch = startEpoch, opt.nEpochs do
    -- Train for a single epoch
-   local trainTop1, trainTop5, trainLoss = trainer:train(epoch, trainLoader)
+   local trainTop1, trainTop5, trainLoss, lr = trainer:train(epoch, trainLoader)
 
    -- Run model on validation set
    local testTop1, testTop5 = trainer:test(epoch, valLoader)
@@ -62,12 +62,15 @@ for epoch = startEpoch, opt.nEpochs do
       bestTop1 = testTop1
       bestTop5 = testTop5
       print(' * Best model ', testTop1, testTop5)
+      checkpoints.save(0, model, trainer.optimState, bestModel, opt)
    end
 
-   checkpoints.save(epoch, model, trainer.optimState, bestModel, opt)
+   if epoch % opt.snapshot == 0 then
+      checkpoints.save(epoch, model, trainer.optimState, bestModel, opt)
+   end
 
    -- Write log file   
-   logger:add{trainTop1, trainTop5, trainLoss, testTop1, testTop5}
+   logger:add{epoch, lr, trainTop1, trainTop5, trainLoss, testTop1, testTop5}
 end
 
 print(string.format(' * Finished top1: %6.3f  top5: %6.3f', bestTop1, bestTop5))
