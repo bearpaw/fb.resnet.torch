@@ -40,7 +40,7 @@ local trainer = Trainer(model, criterion, opt, optimState)
 
 -- Save training log
 local Logger = require 'Logger'
-local logger = Logger(paths.concat(opt.save, opt.expID, 'train.log'), opt.resume ~= 'none')
+local logger = Logger(paths.concat(opt.save, 'train.log'), opt.resume ~= 'none')
 logger:setNames{'epoch', 'lr', 'trainTop1', 'trainTop5', 'trainLoss', 'testTop1', 'testTop5'}
 
 if opt.testOnly then

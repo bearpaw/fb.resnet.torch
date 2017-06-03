@@ -33,7 +33,6 @@ function M.parse(arg)
    cmd:option('-testOnly',        'false', 'Run on validation set only')
    cmd:option('-tenCrop',         'false', 'Ten-crop testing')
    ------------- Checkpointing options ---------------
-   cmd:option('-expID',           'default',     'Experiment ID')
    cmd:option('-snapshot',        10,            'Save models every snapshot step')
    cmd:option('-save',            'checkpoints', 'Directory in which to save checkpoints')
    cmd:option('-resume',          'none',        'Resume from the latest checkpoint in this directory')
@@ -43,12 +42,15 @@ function M.parse(arg)
    cmd:option('-weightDecay',     5e-4,  'weight decay')
    ---------- Model options ----------------------------------
    cmd:option('-netType',      'resnet', 'Options: resnet | preresnet')
-   cmd:option('-depth',        34,       'ResNet depth: 18 | 34 | 50 | 101 | ...', 'number')
+   cmd:option('-depth',        28,       'ResNet depth: 18 | 34 | 50 | 101 | ...', 'number')
    cmd:option('-shortcutType', '',       'Options: A | B | C')
    cmd:option('-retrain',      'none',   'Path to model to retrain with')
    cmd:option('-optimState',   'none',   'Path to an optimState to reload from')
    cmd:option('-dropout',      0,      'Dropout ratio')
    cmd:option('-widen_factor', 10,       'Widen factor')
+   cmd:option('-bottleneckType', 'resnext_C', 'Options: resnet | resnext_B | resnext_C')
+   cmd:option('-baseWidth',    64,       'ResNet base width', 'number')
+   cmd:option('-cardinality',   1,       'ResNet cardinality', 'number')
    ---------- Model options ----------------------------------
    cmd:option('-shareGradInput',  'false', 'Share gradInput tensors to reduce memory usage')
    cmd:option('-optnet',          'false', 'Use optnet to reduce memory usage')
@@ -80,11 +82,11 @@ function M.parse(arg)
       opt.shortcutType = opt.shortcutType == '' and 'B' or opt.shortcutType
       opt.nEpochs = opt.nEpochs == 0 and 90 or opt.nEpochs
    elseif opt.dataset == 'cifar10' then
-      -- Default shortcutType=A and nEpochs=164
+      -- Default shortcutType=A and nEpochs=200
       opt.shortcutType = opt.shortcutType == '' and 'A' or opt.shortcutType
       opt.nEpochs = opt.nEpochs == 0 and 200 or opt.nEpochs
    elseif opt.dataset == 'cifar100' then
-       -- Default shortcutType=A and nEpochs=164
+       -- Default shortcutType=A and nEpochs=200
        opt.shortcutType = opt.shortcutType == '' and 'A' or opt.shortcutType
        opt.nEpochs = opt.nEpochs == 0 and 200 or opt.nEpochs
    else
