@@ -1,12 +1,12 @@
 --
---  Copyright (c) 2017, Facebook, Inc.
+--  Copyright (c) 2016, Facebook, Inc.
 --  All rights reserved.
 --
 --  This source code is licensed under the BSD-style license found in the
 --  LICENSE file in the root directory of this source tree. An additional grant
 --  of patent rights can be found in the PATENTS file in the same directory.
 --
---  The ResNeXt model definition
+--  The ResNet model definition
 --
 
 local nn = require 'nn'
@@ -17,7 +17,6 @@ local Avg = cudnn.SpatialAveragePooling
 local ReLU = cudnn.ReLU
 local Max = nn.SpatialMaxPooling
 local SBatchNorm = nn.SpatialBatchNormalization
-
 local inputRes = 32
 
 local function createModel(opt)
@@ -45,12 +44,34 @@ local function createModel(opt)
          return nn.Identity()
       end
    end
-   
-   -- The original bottleneck residual layer
-   local function resnet_bottleneck(n, stride)
+
+   -- The basic residual layer block for 18 and 34 layer network, and the
+   -- CIFAR networks
+   local function basicblock(n, stride)
+      local nInputPlane = iChannels
+      iChannels = n
+
+      local s = nn.Sequential()
+      s:add(Convolution(nInputPlane,n,3,3,stride,stride,1,1))
+      s:add(SBatchNorm(n))
+      s:add(ReLU(true))
+      s:add(Convolution(n,n,3,3,1,1,1,1))
+      s:add(SBatchNorm(n))
+
+      return nn.Sequential()
+         :add(nn.ConcatTable()
+            :add(s)
+            :add(shortcut(nInputPlane, n, stride)))
+         :add(nn.CAddTable(true))
+         :add(ReLU(true))
+   end
+
+   -- The bottleneck residual layer for 50, 101, and 152 layer networks
+   local function bottleneck(n, stride)
       local nInputPlane = iChannels
       iChannels = n * 4
 
+      -- main branch
       local s = nn.Sequential()
       s:add(Convolution(nInputPlane,n,1,1,1,1,0,0))
       s:add(SBatchNorm(n))
@@ -61,74 +82,9 @@ local function createModel(opt)
       s:add(Convolution(n,n*4,1,1,1,1,0,0))
       s:add(SBatchNorm(n * 4))
 
-      return nn.Sequential()
-         :add(nn.ConcatTable()
-            :add(s)
-            :add(shortcut(nInputPlane, n * 4, stride)))
-         :add(nn.CAddTable(true))
-         :add(ReLU(true))
-   end
-   
-   -- The aggregated residual transformation bottleneck layer, Form (B)
-   local function split(nInputPlane, d, c, stride)
-      local cat = nn.ConcatTable()
-      for i=1,c do
-         local s = nn.Sequential()
-         s:add(Convolution(nInputPlane,d,1,1,1,1,0,0))
-         s:add(SBatchNorm(d))
-         s:add(ReLU(true))
-         s:add(Convolution(d,d,3,3,stride,stride,1,1))
-         s:add(SBatchNorm(d))
-         s:add(ReLU(true))
-         cat:add(s)
-      end
-      return cat
-   end
-   
-   local function resnext_bottleneck_B(n, stride)
-      local nInputPlane = iChannels
-      iChannels = n * 4
-
-      local D = math.floor(n * (opt.baseWidth/64))
-      local C = opt.cardinality
-
-      local s = nn.Sequential()
-      s:add(split(nInputPlane, D, C, stride))
-      s:add(nn.JoinTable(2))
-      s:add(Convolution(D*C,n*4,1,1,1,1,0,0))
-      s:add(SBatchNorm(n*4))
-
-      return nn.Sequential()
-         :add(nn.ConcatTable()
-            :add(s)
-            :add(shortcut(nInputPlane, n * 4, stride)))
-         :add(nn.CAddTable(true))
-         :add(ReLU(true))
-   end
-    
-   -- The aggregated residual transformation bottleneck layer, Form (C)
-   local function resnext_bottleneck_C(n, stride, dropout)
-      local dropout = dropout or 0
-      local nInputPlane = iChannels
-      iChannels = n * 4
-
-      local D = math.floor(n * (opt.baseWidth/64))
-      local C = opt.cardinality
-
-      -- Main branch
-      local s = nn.Sequential()
-      s:add(Convolution(nInputPlane,D*C,1,1,1,1,0,0))
-      s:add(SBatchNorm(D*C))
-      s:add(ReLU(true))
-      s:add(Convolution(D*C,D*C,3,3,stride,stride,1,1,C))
-      s:add(SBatchNorm(D*C))
-      s:add(ReLU(true))
-      s:add(Convolution(D*C,n*4,1,1,1,1,0,0))
-      s:add(SBatchNorm(n*4))
-
       -- Pyramid
       local C = 4      
-      local D = math.floor(nInputPlane / C)
+      local D = math.min(32, math.floor(nInputPlane / C))
 
       local function pyramid(D, C)
          local pyraTable = nn.ConcatTable()
@@ -148,18 +104,14 @@ local function createModel(opt)
       end
 
       local pyra = nn.Sequential()
-               :add(SBatchNorm(nInputPlane))
-               :add(ReLU(true))   
                :add(Convolution(nInputPlane, D,1,1,stride,stride))
                :add(SBatchNorm(D))
-               :add(ReLU(true))
+               :add(ReLU(true))   
                :add(pyramid(D, C))
                :add(SBatchNorm(D))
                :add(ReLU(true))
                :add(Convolution(D, n * 4,1,1,stride,stride)) 
-      if dropout > 0 then
-         pyra:add(nn.Dropout(dropout,nil,true))
-      end
+               :add(SBatchNorm(n * 4))
 
       inputRes = inputRes/stride
 
@@ -173,34 +125,22 @@ local function createModel(opt)
    end
 
    -- Creates count residual blocks with specified number of features
-   local function layer(block, features, count, stride, dropout)
+   local function layer(block, features, count, stride)
       local s = nn.Sequential()
       for i=1,count do
-         s:add(block(features, i == 1 and stride or 1, dropout))
+         s:add(block(features, i == 1 and stride or 1))
       end
       return s
    end
 
    local model = nn.Sequential()
-   local bottleneck
-   if opt.bottleneckType == 'resnet' then 
-      bottleneck = resnet_bottleneck
-      print('Deploying ResNet bottleneck block')
-   elseif opt.bottleneckType == 'resnext_B' then 
-      bottleneck = resnext_bottleneck_B
-      print('Deploying ResNeXt bottleneck block form B')
-   elseif opt.bottleneckType == 'resnext_C' then 
-      bottleneck = resnext_bottleneck_C
-      print('Deploying ResNeXt bottleneck block form C (group convolution)')
-   else
-      error('invalid bottleneck type: ' .. opt.bottleneckType)
-   end
-   
    if opt.dataset == 'imagenet' then
       inputRes = 56
       -- Configurations for ResNet:
       --  num. residual blocks, num features, residual block function
       local cfg = {
+         [18]  = {{2, 2, 2, 2}, 512, basicblock},
+         [34]  = {{3, 4, 6, 3}, 512, basicblock},
          [50]  = {{3, 4, 6, 3}, 2048, bottleneck},
          [101] = {{3, 4, 23, 3}, 2048, bottleneck},
          [152] = {{3, 8, 36, 3}, 2048, bottleneck},
@@ -223,26 +163,40 @@ local function createModel(opt)
       model:add(Avg(7, 7, 1, 1))
       model:add(nn.View(nFeatures):setNumInputDims(3))
       model:add(nn.Linear(nFeatures, 1000))
-   
-   elseif opt.dataset == 'cifar10' or opt.dataset == 'cifar100' then
-      inputRes = 32
-      -- Model type specifies number of layers for CIFAR-10 and CIFAR-100 model
-      assert((depth - 2) % 9 == 0, 'depth should be one of 29, 38, 47, 56, 101')
-      local n = (depth - 2) / 9
-      
-      iChannels = 64
-      print(' | ResNet-' .. depth .. ' ' .. opt.dataset)
+   elseif opt.dataset == 'cifar10' then
+      -- Model type specifies number of layers for CIFAR-10 model
+      assert((depth - 2) % 6 == 0, 'depth should be one of 20, 32, 44, 56, 110, 1202')
+      local n = (depth - 2) / 6
+      iChannels = 16
+      print(' | ResNet-' .. depth .. ' CIFAR-10')
 
-      model:add(Convolution(3,64,3,3,1,1,1,1))
-      model:add(SBatchNorm(64))
+      -- The ResNet CIFAR-10 model
+      model:add(Convolution(3,16,3,3,1,1,1,1))
+      model:add(SBatchNorm(16))
       model:add(ReLU(true))
-      model:add(layer(bottleneck, 64, n, 1, opt.dropout))
-      model:add(layer(bottleneck, 128, n, 2, opt.dropout))
-      model:add(layer(bottleneck, 256, n, 2, opt.dropout))
+      model:add(layer(basicblock, 16, n))
+      model:add(layer(basicblock, 32, n, 2))
+      model:add(layer(basicblock, 64, n, 2))
       model:add(Avg(8, 8, 1, 1))
-      model:add(nn.View(1024):setNumInputDims(3))
-      local nCategories = opt.dataset == 'cifar10' and 10 or 100
-      model:add(nn.Linear(1024, nCategories))
+      model:add(nn.View(64):setNumInputDims(3))
+      model:add(nn.Linear(64, 10))
+   elseif opt.dataset == 'cifar100' then
+      -- Model type specifies number of layers for CIFAR-100 model
+      assert((depth - 2) % 6 == 0, 'depth should be one of 20, 32, 44, 56, 110, 1202')
+      local n = (depth - 2) / 6
+      iChannels = 16
+      print(' | ResNet-' .. depth .. ' CIFAR-100')
+
+      -- The ResNet CIFAR-100 model
+      model:add(Convolution(3,16,3,3,1,1,1,1))
+      model:add(SBatchNorm(16))
+      model:add(ReLU(true))
+      model:add(layer(basicblock, 16, n))
+      model:add(layer(basicblock, 32, n, 2))
+      model:add(layer(basicblock, 64, n, 2))
+      model:add(Avg(8, 8, 1, 1))
+      model:add(nn.View(64):setNumInputDims(3))
+      model:add(nn.Linear(64, 100))
    else
       error('invalid dataset: ' .. opt.dataset)
    end
