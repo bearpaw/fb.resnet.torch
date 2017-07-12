@@ -1,0 +1,3 @@
+[submodule "utils/torch-opCounter"]
+	path = utils/torch-opCounter
+	url = https://github.com/apaszke/torch-opCounter.git
